@@ -6,10 +6,9 @@ Modular Arduino sketch for the ESP32.
 
 ## Behavior
 
-- **First boot (no stored WiFi):** ESP creates AP `XYZ-Switch`. Connect to it; a captive portal redirects to the setup page. Enter router SSID and password, then Connect. On success, credentials are saved and the page suggests closing after 3 seconds; the ESP keeps the AP up ~5 s then switches to STA. On failure, an error is shown with a link to try again.
-- **Later boots (stored WiFi):** Tries to connect with saved credentials. If it fails, you need to clear NVS (e.g. erase flash or add a “reset config” action) to get back to the portal; for now, re-flashing or full erase brings back the setup portal.
-- **Serial (USB):** At 115200, press **Enter** to open the Govee menu: **1** Set API key, **2** List devices, **3** Select/deselect devices (by number), **0** Back. Selections and API key are stored in NVS.
-- **SW1 (GPIO3):** Toggles all selected Govee devices. Flips stored on/off and sends to every selected device; no per-device state. SW2 (GPIO4) is reserved.
+- **WiFi:** On boot, connects using stored credentials (NVS). If none or connection fails, use the Serial menu: **4** WiFi setup → scan lists networks by signal strength; pick by number or type SSID, then password; saves only on successful connect.
+- **Serial (USB):** At 115200, press **Enter** for the menu: **1** Set API key, **2** List devices, **3** Select/deselect devices, **4** WiFi setup, **0** Back. All settings stored in NVS.
+- **SW1 (GPIO3):** Toggles all selected Govee devices. SW2 (GPIO4) is reserved.
 
 ## Build and upload
 
@@ -24,7 +23,6 @@ Modular Arduino sketch for the ESP32.
 ```
 XYZSwitch/
   XYZSwitch.ino   - setup/loop, switches, serial menu, SW1→Govee.toggleLights
-  ConfigPortal.h  - ConfigPortal API
-  ConfigPortal.cpp - AP, DNS captive portal, WebServer, NVS save/load
+  WifiConfig.h/cpp - NVS (ssid, pass), tryStoredWifi, setWifiCredentials, tryConnect
   Govee.h / Govee.cpp - Govee API (NVS: apikey, selected devices, lastOn), fetch/list, control, toggle
 ```

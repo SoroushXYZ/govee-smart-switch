@@ -1,12 +1,9 @@
 /*
  * XYZ-Switch firmware
- * On first boot: AP "XYZ-Switch" and web setup. Then connect to router.
- * Serial (USB): press Enter for menu — API key, list devices, select/deselect. SW1 toggles lights.
+ * WiFi, Govee API key, and device selection via Serial (Enter for menu). SW1 toggles lights.
  */
-#include "ConfigPortal.h"
+#include "WifiConfig.h"
 #include "Govee.h"
-
-const char* AP_NAME = "XYZ-Switch";
 
 #define SW1_GPIO 3
 #define SW2_GPIO 4
@@ -15,15 +12,18 @@ const char* AP_NAME = "XYZ-Switch";
 static bool sw1_last, sw2_last;
 static unsigned long sw1_ts, sw2_ts;
 
-// Serial menu: 0=normal, 1=main, 2=wait API key, 3=wait select number
+// Serial menu: 0=normal, 1=main, 2=wait API key, 3=wait select number, 4=wait WiFi number/SSID, 5=wait WiFi pass
 static int menuState = 0;
 static String lineBuf;
+static String wifiSsid;
+static int wifiScanCount = 0;
 
 static void showMainMenu() {
-  Serial.println("\n--- Govee ---");
+  Serial.println("\n--- Menu ---");
   Serial.println("1) Set API key");
   Serial.println("2) List devices");
   Serial.println("3) Select / deselect devices");
+  Serial.println("4) WiFi setup");
   Serial.println("0) Back");
   Serial.print("> ");
 }
@@ -64,6 +64,17 @@ static void processLine() {
     } else if (lineBuf == "3") {
       showSelectMenu();
       menuState = 3;
+    } else if (lineBuf == "4") {
+      wifiScanCount = WifiConfig.scanNetworks();
+      if (wifiScanCount == 0) {
+        Serial.println("No networks found.");
+      } else {
+        Serial.println("");
+        for (int i = 0; i < wifiScanCount; i++)
+          Serial.println(String("  ") + (i + 1) + ") " + WifiConfig.getScannedSsid(i) + " (" + WifiConfig.getScannedRssi(i) + " dBm)");
+      }
+      Serial.print("Number (0=back) or type SSID> ");
+      menuState = 4;
     } else if (lineBuf == "0") {
       menuState = 0;
       Serial.println("(menu closed; press Enter to reopen)");
@@ -89,6 +100,30 @@ static void processLine() {
       showSelectMenu();
     } else
       showSelectMenu();
+  } else if (menuState == 4) {
+    if (lineBuf.length() == 0) {
+      menuState = 1;
+      showMainMenu();
+    } else if (lineBuf == "0") {
+      menuState = 1;
+      showMainMenu();
+    } else {
+      int v = lineBuf.toInt();
+      if (v >= 1 && v <= wifiScanCount)
+        wifiSsid = WifiConfig.getScannedSsid(v - 1);
+      else
+        wifiSsid = lineBuf;
+      Serial.print("Password> ");
+      menuState = 5;
+    }
+  } else if (menuState == 5) {
+    if (WifiConfig.tryConnect(wifiSsid, lineBuf)) {
+      WifiConfig.setWifiCredentials(wifiSsid, lineBuf);
+      Serial.println("WiFi saved and connected.");
+    } else
+      Serial.println("Connection failed.");
+    menuState = 1;
+    showMainMenu();
   }
 }
 
@@ -117,16 +152,13 @@ void setup() {
   pinMode(SW1_GPIO, INPUT_PULLUP);
   pinMode(SW2_GPIO, INPUT_PULLUP);
 
-  if (ConfigPortal.tryStoredWifi()) {
+  if (WifiConfig.tryStoredWifi()) {
     Serial.println("Connected to WiFi.");
-    Serial.println(String("SW1=GPIO") + SW1_GPIO + " (toggle lights)  SW2=GPIO" + SW2_GPIO);
-    Serial.println("Press Enter for Govee menu (API key, devices).");
-    return;
+  } else {
+    Serial.println("WiFi not configured. Press Enter, then 4 to set WiFi.");
   }
-
-  Serial.print("Starting config portal: ");
-  Serial.println(AP_NAME);
-  ConfigPortal.begin(AP_NAME);
+  Serial.println(String("SW1=GPIO") + SW1_GPIO + " (toggle lights)  SW2=GPIO" + SW2_GPIO);
+  Serial.println("Press Enter for menu.");
 }
 
 static void pollSwitches() {
@@ -154,10 +186,6 @@ static void pollSwitches() {
 }
 
 void loop() {
-  if (ConfigPortal.isActive()) {
-    ConfigPortal.handleClient();
-  } else {
-    pollSwitches();
-    serialMenuStep();
-  }
+  pollSwitches();
+  serialMenuStep();
 }
