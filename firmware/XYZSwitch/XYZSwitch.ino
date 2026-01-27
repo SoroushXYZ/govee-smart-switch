@@ -7,9 +7,11 @@
 
 #define SW1_GPIO 3
 #define SW2_GPIO 4
+#define LED_GPIO 8   // onboard blue LED (inverted: LOW=on, HIGH=off)
 #define DEBOUNCE_MS 50
 
 static bool sw1_last, sw2_last;
+static bool serialActive = false;
 static unsigned long sw1_ts, sw2_ts;
 
 // Serial menu: 0=normal, 1=main, 2=wait API key, 3=wait select number, 4=wait WiFi number/SSID, 5=wait WiFi pass
@@ -129,6 +131,7 @@ static void processLine() {
 
 static void serialMenuStep() {
   while (Serial.available()) {
+    serialActive = true;
     char c = Serial.read();
     if (c == '\r' || c == '\n') {
       if (menuState == 0) {
@@ -151,6 +154,8 @@ void setup() {
 
   pinMode(SW1_GPIO, INPUT_PULLUP);
   pinMode(SW2_GPIO, INPUT_PULLUP);
+  pinMode(LED_GPIO, OUTPUT);
+  digitalWrite(LED_GPIO, HIGH);   // LED off (inverted)
 
   if (WifiConfig.tryStoredWifi()) {
     Serial.println("Connected to WiFi.");
@@ -188,4 +193,5 @@ static void pollSwitches() {
 void loop() {
   pollSwitches();
   serialMenuStep();
+  digitalWrite(LED_GPIO, serialActive ? LOW : HIGH);   // on when Serial used (inverted)
 }
