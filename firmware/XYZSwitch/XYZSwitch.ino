@@ -1,18 +1,26 @@
 /*
  * XYZ-Switch firmware
- * WiFi, Govee API key, and device selection via Serial (Enter for menu). SW1 toggles lights.
+ * Deep sleep by default. SW1 (GPIO3) wakes -> WiFi, toggle lights, 8s window -> sleep (or stay awake if Serial used).
+ * Power-on: 15s window -> sleep unless Serial used. Serial at any time = stay awake (menu, SW1 toggle).
  */
 #include "WifiConfig.h"
 #include "Govee.h"
+#include <esp_sleep.h>
+#include <WiFi.h>
 
 #define SW1_GPIO 3
 #define SW2_GPIO 4
 #define LED_GPIO 8   // onboard blue LED (inverted: LOW=on, HIGH=off)
 #define DEBOUNCE_MS 50
+#define IDLE_AFTER_JOB_MS  8000
+#define IDLE_UNDEFINED_MS 15000
 
 static bool sw1_last, sw2_last;
 static bool serialActive = false;
 static unsigned long sw1_ts, sw2_ts;
+static bool doLightWork = false;
+static bool idleWindowActive = false;
+static unsigned long idleWindowEnd = 0;
 
 // Serial menu: 0=normal, 1=main, 2=wait API key, 3=wait select number, 4=wait WiFi number/SSID, 5=wait WiFi pass
 static int menuState = 0;
@@ -129,6 +137,14 @@ static void processLine() {
   }
 }
 
+static void goToSleep() {
+  digitalWrite(LED_GPIO, HIGH);
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+  esp_deep_sleep_enable_gpio_wakeup(1ULL << SW1_GPIO, ESP_GPIO_WAKEUP_GPIO_LOW);
+  esp_deep_sleep_start();
+}
+
 static void serialMenuStep() {
   while (Serial.available()) {
     serialActive = true;
@@ -149,21 +165,29 @@ static void serialMenuStep() {
 
 void setup() {
   Serial.begin(115200);
-  delay(500);
-  Serial.println("\nXYZ-Switch");
+  delay(300);
 
   pinMode(SW1_GPIO, INPUT_PULLUP);
   pinMode(SW2_GPIO, INPUT_PULLUP);
   pinMode(LED_GPIO, OUTPUT);
-  digitalWrite(LED_GPIO, HIGH);   // LED off (inverted)
+  digitalWrite(LED_GPIO, HIGH);
 
+  esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+  if (cause == ESP_SLEEP_WAKEUP_GPIO) {
+    doLightWork = true;
+    idleWindowActive = false;
+    return;
+  }
+
+  idleWindowActive = true;
+  idleWindowEnd = millis() + IDLE_UNDEFINED_MS;
   if (WifiConfig.tryStoredWifi()) {
     Serial.println("Connected to WiFi.");
   } else {
     Serial.println("WiFi not configured. Press Enter, then 4 to set WiFi.");
   }
-  Serial.println(String("SW1=GPIO") + SW1_GPIO + " (toggle lights)  SW2=GPIO" + SW2_GPIO);
-  Serial.println("Press Enter for menu.");
+  Serial.println(String("SW1=GPIO") + SW1_GPIO + " (toggle)  SW2=GPIO" + SW2_GPIO);
+  Serial.println("Press Enter for menu. (15s no Serial -> sleep)");
 }
 
 static void pollSwitches() {
@@ -191,7 +215,19 @@ static void pollSwitches() {
 }
 
 void loop() {
+  if (doLightWork) {
+    WifiConfig.tryStoredWifi();
+    Govee.toggleLights();
+    doLightWork = false;
+    sw1_last = true;
+    idleWindowActive = true;
+    idleWindowEnd = millis() + IDLE_AFTER_JOB_MS;
+  }
+
   pollSwitches();
   serialMenuStep();
-  digitalWrite(LED_GPIO, serialActive ? LOW : HIGH);   // on when Serial used (inverted)
+  digitalWrite(LED_GPIO, serialActive ? LOW : HIGH);
+
+  if (idleWindowActive && (millis() >= idleWindowEnd) && !serialActive)
+    goToSleep();
 }
