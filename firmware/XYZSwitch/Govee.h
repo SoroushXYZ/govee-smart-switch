@@ -32,6 +32,9 @@ public:
 
   // Toggle: flip getLastOn(), controlAll, setLastOn. Handles no-key, no-devices, no-WiFi.
   void toggleLights();
+
+  // Clear API key, selected devices, and last-on state from NVS.
+  void clearAll();
 };
 
 extern GoveeClass Govee;

@@ -20,6 +20,9 @@ public:
   // Access last scan. i in [0, scanNetworks()-1].
   String getScannedSsid(int i);
   int getScannedRssi(int i);
+
+  // Clear stored SSID and password from NVS.
+  void clearAll();
 };
 
 extern WifiConfigClass WifiConfig;

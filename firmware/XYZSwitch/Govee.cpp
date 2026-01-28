@@ -201,4 +201,12 @@ void GoveeClass::toggleLights() {
     Serial.println("Govee: control failed");
 }
 
+void GoveeClass::clearAll() {
+  prefs.begin(GOVEE_NS, false);
+  prefs.clear();
+  prefs.end();
+  selCount = 0;
+  lastListCount = 0;
+}
+
 GoveeClass Govee;

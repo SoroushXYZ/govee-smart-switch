@@ -27,6 +27,13 @@ void WifiConfigClass::setWifiCredentials(const String& ssid, const String& pass)
   prefs.end();
 }
 
+void WifiConfigClass::clearAll() {
+  Preferences prefs;
+  prefs.begin(NVS_NS, false);
+  prefs.clear();
+  prefs.end();
+}
+
 bool WifiConfigClass::tryConnect(const String& ssid, const String& pass) {
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid.c_str(), pass.c_str());

@@ -22,7 +22,7 @@ static bool doLightWork = false;
 static bool idleWindowActive = false;
 static unsigned long idleWindowEnd = 0;
 
-// Serial menu: 0=normal, 1=main, 2=wait API key, 3=wait select number, 4=wait WiFi number/SSID, 5=wait WiFi pass
+// Serial menu: 0=normal, 1=main, 2=wait API key, 3=wait select number, 4=wait WiFi number/SSID, 5=wait WiFi pass, 6=wait reset confirm
 static int menuState = 0;
 static String lineBuf;
 static String wifiSsid;
@@ -34,6 +34,7 @@ static void showMainMenu() {
   Serial.println("2) List devices");
   Serial.println("3) Select / deselect devices");
   Serial.println("4) WiFi setup");
+  Serial.println("5) Reset all (WiFi, API key, devices)");
   Serial.println("0) Back");
   Serial.print("> ");
 }
@@ -85,6 +86,9 @@ static void processLine() {
       }
       Serial.print("Number (0=back) or type SSID> ");
       menuState = 4;
+    } else if (lineBuf == "5") {
+      Serial.print("Type YES to confirm reset> ");
+      menuState = 6;
     } else if (lineBuf == "0") {
       menuState = 0;
       Serial.println("(menu closed; press Enter to reopen)");
@@ -132,6 +136,16 @@ static void processLine() {
       Serial.println("WiFi saved and connected.");
     } else
       Serial.println("Connection failed.");
+    menuState = 1;
+    showMainMenu();
+  } else if (menuState == 6) {
+    if (lineBuf == "YES") {
+      WifiConfig.clearAll();
+      Govee.clearAll();
+      WiFi.disconnect(true);
+      Serial.println("Reset done. WiFi, API key, and devices cleared.");
+    } else
+      Serial.println("Reset cancelled.");
     menuState = 1;
     showMainMenu();
   }
