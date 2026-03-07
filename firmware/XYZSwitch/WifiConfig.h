@@ -23,6 +23,9 @@ public:
 
   // Clear stored SSID and password from NVS.
   void clearAll();
+
+  // Call from loop() when connected. Syncs NTP if needed; if 24h since last DHCP, reconnects with DHCP and saves new static IP. Non-blocking (spreads NTP wait over multiple calls).
+  void runDailyRefreshIfNeeded();
 };
 
 extern WifiConfigClass WifiConfig;

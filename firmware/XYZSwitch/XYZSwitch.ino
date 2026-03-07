@@ -179,7 +179,6 @@ static void serialMenuStep() {
 
 void setup() {
   Serial.begin(115200);
-  delay(300);
 
   pinMode(SW1_GPIO, INPUT_PULLUP);
   pinMode(SW2_GPIO, INPUT_PULLUP);
@@ -240,6 +239,8 @@ void loop() {
 
   pollSwitches();
   serialMenuStep();
+  if (WiFi.status() == WL_CONNECTED)
+    WifiConfig.runDailyRefreshIfNeeded();
   digitalWrite(LED_GPIO, serialActive ? LOW : HIGH);
 
   if (idleWindowActive && (millis() >= idleWindowEnd) && !serialActive)

@@ -14,6 +14,45 @@
 #define MAX_SEL 8
 
 namespace {
+  String urlEncodeQuery(const String& s) {
+    String out;
+    out.reserve(s.length() + 10);
+    for (unsigned i = 0; i < s.length(); i++) {
+      char c = s[i];
+      if (c == ':') out += F("%3A");
+      else if (c == ' ') out += F("%20");
+      else out += c;
+    }
+    return out;
+  }
+
+  // Fetch power state for one device. Returns true=on, false=off, or false if request failed / not retrievable.
+  bool getDevicePowerState(const String& device, const String& model, const String& apiKey) {
+    WiFiClientSecure client;
+    client.setInsecure();
+    HTTPClient http;
+    String url = String(BASE "/v1/devices/state?device=") + urlEncodeQuery(device) + F("&model=") + urlEncodeQuery(model);
+    http.begin(client, url);
+    http.addHeader(F("Govee-API-Key"), apiKey);
+    http.setTimeout(8000);
+    int code = http.GET();
+    String body = http.getString();
+    http.end();
+    if (code != 200) return false;
+    DynamicJsonDocument doc(1024);
+    if (deserializeJson(doc, body) != DeserializationError::Ok) return false;
+    JsonArray props = doc["data"]["properties"].as<JsonArray>();
+    for (JsonObject p : props) {
+      if (p.containsKey(F("powerState"))) {
+        const char* v = p[F("powerState")];
+        return (v && strcmp(v, "on") == 0);
+      }
+    }
+    return false;
+  }
+}
+
+namespace {
   Preferences prefs;
   struct { String device, model, name; } lastList[MAX_LIST];
   int lastListCount = 0;
@@ -175,7 +214,7 @@ bool GoveeClass::controlAll(bool on) {
     int code = http.PUT(body);
     http.end();
     if (code != 200) ok = false;
-    delay(120);
+    delay(60);
   }
   return ok;
 }
@@ -185,7 +224,8 @@ void GoveeClass::toggleLights() {
     Serial.println("Govee: Set API key via Serial menu (press Enter).");
     return;
   }
-  if (getSelectedCount() == 0) {
+  loadSelected();
+  if (selCount == 0) {
     Serial.println("Govee: Select devices via Serial menu (press Enter).");
     return;
   }
@@ -193,10 +233,20 @@ void GoveeClass::toggleLights() {
     Serial.println("Govee: WiFi not connected.");
     return;
   }
-  bool next = !getLastOn();
-  if (controlAll(next)) {
-    setLastOn(next);
-    Serial.println(next ? "Govee: ON" : "Govee: OFF");
+  String key = getApiKey();
+  bool anyOn = false;
+  for (int i = 0; i < selCount; i++) {
+    if (getDevicePowerState(sel[i].device, sel[i].model, key)) {
+      anyOn = true;
+      break;
+    }
+    if (i < selCount - 1) delay(60);
+  }
+  // If any light was on -> turn all off. If all were off -> turn all on.
+  bool turnOn = !anyOn;
+  if (controlAll(turnOn)) {
+    setLastOn(turnOn);
+    Serial.println(turnOn ? "Govee: ON" : "Govee: OFF");
   } else
     Serial.println("Govee: control failed");
 }
