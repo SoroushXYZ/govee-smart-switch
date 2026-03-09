@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 """
-Configure the XYZ-Switch ESP32 over serial.
-List serial ports (0 = refresh), then drive the device menu to set API key,
-WiFi, select Govee devices, or reset.
+Minimal serial console for XYZ-Switch (ESP32).
+
+The ESP32 provides its own menu over Serial; this script just:
+- lets you pick a serial port
+- opens the connection
+- forwards input/output between your terminal and the device
+
+Exit: type `~.` on its own line, or press Ctrl+C.
 """
 
+from __future__ import annotations
+
+import argparse
 import sys
 import time
+import threading
 
 try:
     import serial
@@ -18,7 +27,6 @@ except ImportError:
 BAUD = 115200
 READ_TIMEOUT = 0.5
 WRITE_TIMEOUT = 2.0
-POST_SEND_WAIT = 2.0   # seconds to read after sending a command
 
 
 def list_serial_ports():
@@ -28,7 +36,7 @@ def list_serial_ports():
     return [(p.device, p.description or p.device) for p in ports]
 
 
-def choose_port():
+def choose_port() -> str | None:
     """Let user choose a serial port by number; 0 = refresh. Returns port string or None to exit."""
     while True:
         ports = list_serial_ports()
@@ -61,12 +69,12 @@ def choose_port():
         print("Invalid choice.")
 
 
-def open_serial(port):
+def open_serial(port: str, baud: int) -> "serial.Serial" | None:
     """Open serial port at BAUD. Returns serial object or None."""
     try:
         ser = serial.Serial(
             port=port,
-            baudrate=BAUD,
+            baudrate=baud,
             timeout=READ_TIMEOUT,
             write_timeout=WRITE_TIMEOUT,
         )
@@ -76,136 +84,79 @@ def open_serial(port):
         return None
 
 
-def read_until_prompt(ser, timeout_sec=5.0, silent=False):
-    """Read and optionally print lines until we see a prompt (e.g. '> '). Returns collected text."""
-    start = time.monotonic()
-    buf = []
-    while (time.monotonic() - start) < timeout_sec:
-        line = ser.readline()
-        if not line:
-            time.sleep(0.05)
-            continue
+def _reader_loop(ser: "serial.Serial", stop: threading.Event) -> None:
+    """Continuously read from serial and write to stdout (no extra formatting)."""
+    while not stop.is_set():
         try:
-            text = line.decode("utf-8", errors="replace").rstrip()
-        except Exception:
-            text = line.decode("latin-1", errors="replace").rstrip()
-        buf.append(text)
-        if not silent:
-            print(text)
-        if "> " in text or "0=back" in text or "Password> " in text or "API key> " in text:
+            n = ser.in_waiting
+            chunk = ser.read(n or 1)
+        except serial.SerialException:
+            stop.set()
             break
-    return "\n".join(buf)
 
+        if not chunk:
+            continue
 
-def send_and_wait(ser, s, wait_sec=POST_SEND_WAIT, silent=False):
-    """Send string (newline appended if missing), then read and print for wait_sec."""
-    if not s.endswith("\n"):
-        s = s + "\n"
-    try:
-        ser.write(s.encode("utf-8"))
-        ser.flush()
-    except serial.SerialException as e:
-        print(f"Write error: {e}")
-        return ""
-    time.sleep(0.1)
-    return read_until_prompt(ser, timeout_sec=wait_sec, silent=silent)
+        try:
+            text = chunk.decode("utf-8", errors="replace")
+        except Exception:
+            text = chunk.decode("latin-1", errors="replace")
 
-
-def wake_menu(ser):
-    """Send Enter to open the device menu. Returns True if we see menu-like output."""
-    send_and_wait(ser, "\n", wait_sec=3.0)
-    return True
-
-
-def main_menu(ser):
-    """Show our menu and handle choice. Returns False to exit."""
-    print("\n--- Configuration ---")
-    print("  1) Set Govee API key")
-    print("  2) List Govee devices")
-    print("  3) Select / deselect devices (which lights to toggle)")
-    print("  4) WiFi setup")
-    print("  5) Reset all (WiFi, API key, devices)")
-    print("  6) Raw serial (type to device; type '---' alone to return)")
-    print("  0) Exit")
-    try:
-        choice = input("Choice: ").strip()
-    except (EOFError, KeyboardInterrupt):
-        return False
-    if choice == "0":
-        return False
-    if choice == "1":
-        send_and_wait(ser, "\n", wait_sec=2.0)
-        send_and_wait(ser, "1", wait_sec=2.0)
-        api_key = input("Enter API key: ").strip()
-        if api_key:
-            send_and_wait(ser, api_key, wait_sec=2.0)
-        return True
-    if choice == "2":
-        send_and_wait(ser, "\n", wait_sec=2.0)
-        send_and_wait(ser, "2", wait_sec=8.0)
-        return True
-    if choice == "3":
-        send_and_wait(ser, "\n", wait_sec=2.0)
-        send_and_wait(ser, "3", wait_sec=10.0)
-        while True:
-            try:
-                num = input("Device number to toggle (or 0 to go back): ").strip()
-            except (EOFError, KeyboardInterrupt):
-                break
-            send_and_wait(ser, num, wait_sec=10.0)
-            if num == "0":
-                break
-        return True
-    if choice == "4":
-        send_and_wait(ser, "\n", wait_sec=2.0)
-        send_and_wait(ser, "4", wait_sec=8.0)
-        ssid_or_num = input("Enter network number, or type SSID: ").strip()
-        if not ssid_or_num or ssid_or_num == "0":
-            send_and_wait(ser, "0", wait_sec=2.0)
-            return True
-        send_and_wait(ser, ssid_or_num, wait_sec=2.0)
-        pwd = input("Password: ").strip()
-        send_and_wait(ser, pwd, wait_sec=18.0)
-        return True
-    if choice == "5":
-        send_and_wait(ser, "\n", wait_sec=2.0)
-        send_and_wait(ser, "5", wait_sec=2.0)
-        confirm = input("Type YES to confirm reset: ").strip()
-        send_and_wait(ser, confirm, wait_sec=3.0)
-        return True
-    if choice == "6":
-        print("Raw serial. Type to send; '---' alone returns to menu.")
-        while True:
-            try:
-                line = input()
-            except (EOFError, KeyboardInterrupt):
-                break
-            if line.strip() == "---":
-                break
-            send_and_wait(ser, line, wait_sec=1.0, silent=False)
-        return True
-    print("Unknown option.")
-    return True
+        sys.stdout.write(text)
+        sys.stdout.flush()
 
 
 def run():
-    print("XYZ-Switch configuration tool")
-    print("Make sure the device is awake (press the button if needed) and connected via the right USB-C port.\n")
+    parser = argparse.ArgumentParser(description="XYZ-Switch serial console (passthrough).")
+    parser.add_argument("--port", help="Serial port (e.g. COM5). If omitted, you'll be prompted.")
+    parser.add_argument("--baud", type=int, default=BAUD, help=f"Baud rate (default: {BAUD}).")
+    args = parser.parse_args()
 
-    port = choose_port()
+    print("XYZ-Switch serial console")
+    print("Connect via the right USB-C port. If the device is sleeping, press the button to wake it.")
+    print("Tip: press Enter to make the ESP show its menu.")
+    print("Exit: type `~.` on its own line, or press Ctrl+C.\n")
+
+    port = args.port or choose_port()
     if not port:
         print("Bye.")
         return
-    ser = open_serial(port)
+
+    ser = open_serial(port, args.baud)
     if not ser:
         return
     try:
-        print(f"\nOpened {port} at {BAUD} baud.")
-        print("Waking device menu... (if nothing happens, press the button on the device and try again.)")
-        wake_menu(ser)
-        while main_menu(ser):
-            pass
+        print(f"\nOpened {port} at {args.baud} baud.\n")
+        stop = threading.Event()
+        reader = threading.Thread(target=_reader_loop, args=(ser, stop), daemon=True)
+        reader.start()
+
+        # Give the device a nudge so you see something if it's already awake.
+        try:
+            ser.write(b"\n")
+            ser.flush()
+        except serial.SerialException:
+            return
+
+        while not stop.is_set():
+            try:
+                line = sys.stdin.readline()
+            except KeyboardInterrupt:
+                break
+            if line == "":
+                break
+            if line.rstrip("\r\n") == "~.":
+                break
+            try:
+                ser.write(line.encode("utf-8", errors="replace"))
+                ser.flush()
+            except serial.SerialException:
+                break
     finally:
+        try:
+            stop.set()
+        except Exception:
+            pass
         ser.close()
     print("Done.")
 

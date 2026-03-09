@@ -79,14 +79,10 @@ Required packages (in `requirements.txt`):
    - **0** — refresh the list (e.g. after plugging in the device or pressing the button).
    - **q** — quit.
 
-4. After you select a port, the tool opens the device menu. You can:
-   - **1) Set Govee API key** — paste the API key from Govee’s email.
-   - **2) List Govee devices** — see all devices on your account.
-   - **3) Select / deselect devices** — choose which lights the button will toggle (select by number; 0 = back).
-   - **4) WiFi setup** — scan networks, pick one by number or type the SSID, then enter the password.
-   - **5) Reset all** — clear WiFi, API key, and device selection (use if you want to start over).
-   - **6) Raw serial** — type directly to the device; type `---` alone to return to the menu.
-   - **0) Exit** — close the serial port and quit.
+4. After you select a port, you are connected to the ESP32’s **own Serial console**.
+   - Press **Enter** to show the ESP32’s menu (if it isn’t already visible).
+   - Type menu choices directly (e.g. `4` for WiFi setup).
+   - To exit the console: type **`~.`** on its own line, or press **Ctrl+C**.
 
 ---
 
