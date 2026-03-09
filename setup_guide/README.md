@@ -25,6 +25,7 @@ There is a **physical switch in the middle** of the device:
 The ESP32 spends most of its time in **deep sleep** to save power. While it is sleeping, the serial connection is **not available**.
 
 - **To make the serial port available:** **Press the button** on the device. This wakes it up. After a short time you will see the serial port in the list and you can connect.
+- **You have a short window:** after a button wake, the firmware will go back to sleep after **~8 seconds** unless it sees Serial activity. If you don’t connect in time, just press the button again.
 - If you run the configuration script and select a port but nothing happens, **press the button on the device** and try again (you can refresh the port list with **0** and then select the port again).
 
 ---
